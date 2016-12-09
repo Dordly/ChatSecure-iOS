@@ -11,37 +11,16 @@
 #import "OTRIncomingMessage.h"
 #import "OTROutgoingMessage.h"
 #import "OTRDatabaseManager.h"
+#import "OTRBuddyCache.h"
 @import YapDatabase;
 #import "OTRImages.h"
 @import JSQMessagesViewController;
 #import <ChatSecureCore/ChatSecureCore-Swift.h>
 @import OTRKit;
 
-const struct OTRBuddyAttributes OTRBuddyAttributes = {
-	.username = @"username",
-	.displayName = @"displayName",
-	.composingMessageString = @"composingMessageString",
-	.statusMessage = @"statusMessage",
-	.chatState = @"chatState",
-	.lastSentChatState = @"lastSentChatState",
-	.status = @"status",
-    .lastMessageDate = @"lastMessageDate",
-    .avatarData = @"avatarData",
-    .encryptionStatus = @"encryptionStatus"
-};
-
 @implementation OTRBuddy
 @synthesize displayName = _displayName;
-
-- (id)init
-{
-    if (self = [super init]) {
-        self.status = OTRThreadStatusOffline;
-        self.chatState = OTRChatStateUnknown;
-        self.lastSentChatState = OTRChatStateUnknown;
-    }
-    return self;
-}
+@dynamic statusMessage, chatState, lastSentChatState, status;
 
 /**
  The current or generated avatar image either from avatarData or the initials from displayName or username
@@ -209,11 +188,29 @@ const struct OTRBuddyAttributes OTRBuddyAttributes = {
 }
 
 - (OTRThreadStatus)currentStatus {
-    return self.status;
+    return [[OTRBuddyCache sharedInstance] threadStatusForBuddy:self];
 }
 
 - (BOOL)isGroupThread {
     return NO;
+}
+
+#pragma mark Dynamic Properties
+
+- (NSString*) statusMessage {
+    return [[OTRBuddyCache sharedInstance] statusMessageForBuddy:self];
+}
+
+- (OTRChatState) chatState {
+    return [[OTRBuddyCache sharedInstance] chatStateForBuddy:self];
+}
+
+- (OTRChatState) lastSentChatState {
+    return [[OTRBuddyCache sharedInstance] lastSentChatStateForBuddy:self];
+}
+
+- (OTRThreadStatus) status {
+    return [[OTRBuddyCache sharedInstance] threadStatusForBuddy:self];
 }
 
 #pragma - mark YapDatabaseRelationshipNode
@@ -267,36 +264,40 @@ const struct OTRBuddyAttributes OTRBuddyAttributes = {
     return finalBuddy;
 }
 
-+ (void)resetAllChatStatesWithTransaction:(YapDatabaseReadWriteTransaction *)transaction
-{
-    NSMutableArray *buddiesToChange = [NSMutableArray array];
-    [transaction enumerateKeysAndObjectsInCollection:[self collection] usingBlock:^(NSString *key, OTRBuddy *buddy, BOOL *stop) {
-        if(buddy.chatState != OTRChatStateUnknown)
-        {
-            [buddiesToChange addObject:buddy];
-        }
-    }];
-    
-    [buddiesToChange enumerateObjectsUsingBlock:^(OTRBuddy *buddy, NSUInteger idx, BOOL *stop) {
-        buddy.chatState = OTRChatStateUnknown;
-        [buddy saveWithTransaction:transaction];
-    }];
+#pragma mark Disable Mantle Storage of Dynamic Properties
+
++ (NSSet<NSString*>*) excludedProperties {
+    static NSSet<NSString*>* excludedProperties = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        excludedProperties = [NSSet setWithArray:@[NSStringFromSelector(@selector(statusMessage)),
+                               NSStringFromSelector(@selector(chatState)),
+                               NSStringFromSelector(@selector(lastSentChatState)),
+                               NSStringFromSelector(@selector(status))]];
+    });
+    return excludedProperties;
 }
 
-+ (void)resetAllBuddyStatusesWithTransaction:(YapDatabaseReadWriteTransaction *)transaction
-{
-    NSMutableArray *buddiesToChange = [NSMutableArray array];
-    [transaction enumerateKeysAndObjectsInCollection:[self collection] usingBlock:^(NSString *key, OTRBuddy *buddy, BOOL *stop) {
-        if(buddy.status != OTRThreadStatusOffline)
-        {
-            [buddiesToChange addObject:buddy];
-        }
+// See MTLModel+NSCoding.h
+// This helps enforce that only the properties keys that we
+// desire will be encoded. Be careful to ensure that values
+// that should be stored in the keychain don't accidentally
+// get serialized!
++ (NSDictionary *)encodingBehaviorsByPropertyKey {
+    NSMutableDictionary *behaviors = [NSMutableDictionary dictionaryWithDictionary:[super encodingBehaviorsByPropertyKey]];
+    NSSet<NSString*> *excludedProperties = [self excludedProperties];
+    [excludedProperties enumerateObjectsUsingBlock:^(NSString * _Nonnull selector, BOOL * _Nonnull stop) {
+        [behaviors setObject:@(MTLModelEncodingBehaviorExcluded) forKey:selector];
     }];
-    
-    [buddiesToChange enumerateObjectsUsingBlock:^(OTRBuddy *buddy, NSUInteger idx, BOOL *stop) {
-        buddy.status = OTRThreadStatusOffline;
-        [buddy saveWithTransaction:transaction];
-    }];
+    return behaviors;
+}
+
++ (MTLPropertyStorage)storageBehaviorForPropertyWithKey:(NSString *)propertyKey {
+    NSSet<NSString*> *excludedProperties = [self excludedProperties];
+    if ([excludedProperties containsObject:propertyKey]) {
+        return MTLPropertyStorageNone;
+    }
+    return [super storageBehaviorForPropertyWithKey:propertyKey];
 }
 
 @end

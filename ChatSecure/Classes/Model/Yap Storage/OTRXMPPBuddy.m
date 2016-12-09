@@ -7,27 +7,24 @@
 //
 
 #import "OTRXMPPBuddy.h"
+#import "OTRBuddyCache.h"
 @import XMPPFramework;
 
 @interface OTRXMPPBuddy ()
-
-@property (nonatomic, strong) NSDictionary <NSString *,NSNumber *>*resourceInfo;
-
 @end
 
 
 @implementation OTRXMPPBuddy
 @synthesize vCardTemp = _vCardTemp;
 @synthesize lastUpdatedvCardTemp = _lastUpdatedvCardTemp;
-@synthesize waitingForvCardTempFetch = _waitingForvCardTempFetch;
 @synthesize photoHash = _photoHash;
+@dynamic waitingForvCardTempFetch;
 
 - (id)init
 {
     if (self = [super init]) {
         self.pendingApproval = NO;
         self.hasIncomingSubscriptionRequest = NO;
-        self.waitingForvCardTempFetch = NO;
     }
     return self;
 }
@@ -58,47 +55,12 @@
     }
 }
 
-- (void)setStatus:(OTRThreadStatus)status forResource:(NSString *)resource
-{
-    if (!resource) {
-        return;
-    }
-    
-    NSDictionary <NSString *,NSNumber *>*newDictionary = @{resource:@(status)};
-    
-    if (!self.resourceInfo) {
-        self.resourceInfo = newDictionary;
-    } else {
-        self.resourceInfo = [self.resourceInfo mtl_dictionaryByAddingEntriesFromDictionary:newDictionary];
-    }
+- (void) setWaitingForvCardTempFetch:(BOOL)waitingForvCardTempFetch {
+    [[OTRBuddyCache sharedInstance] setWaitingForvCardTempFetch:waitingForvCardTempFetch forBuddy:self];
 }
 
-- (void)setStatus:(OTRThreadStatus)status
-{
-    if (status == OTRThreadStatusOffline) {
-        self.resourceInfo = nil;
-    }
-}
-
-- (OTRThreadStatus)status {
-    if (!self.resourceInfo) {
-        return OTRThreadStatusOffline;
-    } else {
-        __block OTRThreadStatus status = OTRThreadStatusOffline;
-        [self.resourceInfo enumerateKeysAndObjectsUsingBlock:^(NSString * _Nonnull key, NSNumber * _Nonnull obj, BOOL * _Nonnull stop) {
-            OTRThreadStatus resourceStatus = obj.intValue;
-            // Check if it less than becauase OTRThreadStatusAvailable == 0 and the closer you are to OTRThreadStatusAvailable the more 'real' it is.
-            if (resourceStatus < status) {
-                status = resourceStatus;
-            }
-            
-            if (status == OTRThreadStatusAvailable) {
-                *stop = YES;
-            }
-            
-        }];
-        return status;
-    }
+- (BOOL) waitingForvCardTempFetch {
+    return [[OTRBuddyCache sharedInstance] waitingForvCardTempFetchForBuddy:self];
 }
 
 #pragma - mark Class Methods
@@ -108,6 +70,15 @@
     return [OTRBuddy collection];
 }
 
+#pragma mark Disable Mantle Storage of Dynamic Properties
 
++ (NSSet<NSString*>*) excludedProperties {
+    static NSSet<NSString*>* excludedProperties = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        excludedProperties = [[super excludedProperties] setByAddingObject:NSStringFromSelector(@selector(waitingForvCardTempFetch))];
+    });
+    return excludedProperties;
+}
 
 @end

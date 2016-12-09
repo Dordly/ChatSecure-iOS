@@ -13,6 +13,7 @@
 #import "OTRIncomingMessage.h"
 #import "OTROutgoingMessage.h"
 #import "OTRXMPPAccount.h"
+#import "OTRBuddyCache.h"
 @import OTRAssets;
 
 @implementation OTRChatDemo
@@ -52,7 +53,7 @@
                 
             }
             
-            buddy.status = (NSInteger)OTRThreadStatusAvailable+idx;
+            [[OTRBuddyCache sharedInstance] setThreadStatus:(NSInteger)OTRThreadStatusAvailable+idx forBuddy:buddy resource:nil];
             
             NSArray *textArray = [self shuffleHelloArray:helloArray];
             

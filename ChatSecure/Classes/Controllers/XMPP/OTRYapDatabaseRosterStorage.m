@@ -14,6 +14,7 @@
 #import "OTRXMPPBuddy.h"
 #import "OTRXMPPAccount.h"
 #import "OTRLanguageManager.h"
+#import "OTRBuddyCache.h"
 
 @import OTRAssets;
 
@@ -184,8 +185,8 @@
 
 - (void)handlePresence:(XMPPPresence *)presence xmppStream:(XMPPStream *)stream
 {
-    [self.databaseConnection readWriteWithBlock:^(YapDatabaseReadWriteTransaction *transaction) {
-        
+    // Saves aren't needed when setting statusMessage or status because OTRBuddyCache is used internally
+    [self.databaseConnection readWithBlock:^(YapDatabaseReadTransaction *transaction) {
         OTRXMPPBuddy *buddy = [[self buddyWithJID:[presence from] xmppStream:stream transaction:transaction] copy];
         NSString *resource = [presence from].resource;
         
@@ -217,19 +218,16 @@
                     break;
             }
             
+            NSString *statusMessage = nil;
             if ([[presence status] length]) {
-                buddy.statusMessage = [presence status];
+                statusMessage = [presence status];
+            } else {
+                statusMessage = defaultMessage;
             }
-            else {
-                buddy.statusMessage = defaultMessage;
-            }
+            [[OTRBuddyCache sharedInstance] setStatusMessage:statusMessage forBuddy:buddy];
         }
-        
-        [buddy setStatus:newStatus forResource:resource];
-        
-        [buddy saveWithTransaction:transaction];
+        [[OTRBuddyCache sharedInstance] setThreadStatus:newStatus forBuddy:buddy resource:resource];
     }];
-    
 }
 
 - (BOOL)userExistsWithJID:(XMPPJID *)jid xmppStream:(XMPPStream *)stream

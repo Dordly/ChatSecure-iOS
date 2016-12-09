@@ -178,7 +178,8 @@
     
     __block BOOL result = NO;
     
-    [self.databaseConnection readWriteWithBlock:^(YapDatabaseReadWriteTransaction *transaction) {
+    // Saving is not required due to internal use of in-memory OTRBuddyCache
+    [self.databaseConnection readWithBlock:^(YapDatabaseReadTransaction *transaction) {
         id<OTRvCard> vCard = nil;
         if ([jid isEqualToJID:stream.myJID options:XMPPJIDCompareBare]) {
             vCard = [[OTRXMPPAccount accountForStream:stream transaction:transaction] copy];
@@ -191,7 +192,6 @@
         } else if ([vCard.lastUpdatedvCardTemp timeIntervalSinceNow] <= -24*60*60 ||
                    !vCard.vCardTemp) {
             vCard.waitingForvCardTempFetch = YES;
-            [vCard saveWithTransaction:transaction];
             result = YES;
         }
     }];

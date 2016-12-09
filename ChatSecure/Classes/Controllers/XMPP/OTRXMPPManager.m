@@ -53,6 +53,7 @@
 #import "OTRXMPPBudyTimers.h"
 #import "OTRXMPPError.h"
 #import "OTRXMPPManager_Private.h"
+#import "OTRBuddyCache.h"
 @import OTRAssets;
 
 NSString *const OTRXMPPRegisterSucceededNotificationName = @"OTRXMPPRegisterSucceededNotificationName";
@@ -470,14 +471,12 @@ NSString *const OTRXMPPLoginErrorKey = @"OTRXMPPLoginErrorKey";
     [self.xmppStream disconnectAfterSending];
     
     __weak typeof(self)weakSelf = self;
-    [self.databaseConnection asyncReadWriteWithBlock:^(YapDatabaseReadWriteTransaction *transaction) {
+    [self.databaseConnection asyncReadWithBlock:^(YapDatabaseReadTransaction *transaction) {
         __strong typeof(weakSelf)strongSelf = weakSelf;
-        NSArray *buddiesArray = [strongSelf.account allBuddiesWithTransaction:transaction];
+        NSArray<OTRXMPPBuddy*> *buddiesArray = [strongSelf.account allBuddiesWithTransaction:transaction];
         for (OTRXMPPBuddy *buddy in buddiesArray) {
-            buddy.status = OTRThreadStatusOffline;
-            buddy.chatState = OTRChatStateGone;
-            
-            [buddy saveWithTransaction:transaction];
+            // We don't need to save in here because we're using OTRBuddyCache in memory storage
+            [[OTRBuddyCache sharedInstance] purgeAllPropertiesForBuddy:buddy];
         }
     } completionQueue:dispatch_get_main_queue() completionBlock:^{
         __strong typeof(weakSelf)strongSelf = weakSelf;
@@ -594,15 +593,12 @@ NSString *const OTRXMPPLoginErrorKey = @"OTRXMPPLoginErrorKey";
     }
     
     //Reset buddy info to offline
-    [self.databaseConnection readWriteWithBlock:^(YapDatabaseReadWriteTransaction *transaction) {
-        NSArray *allBuddies = [self.account allBuddiesWithTransaction:transaction];
+    [self.databaseConnection asyncReadWithBlock:^(YapDatabaseReadTransaction *transaction) {
+        NSArray<OTRXMPPBuddy*> *allBuddies = [self.account allBuddiesWithTransaction:transaction];
         [allBuddies enumerateObjectsUsingBlock:^(OTRXMPPBuddy *buddy, NSUInteger idx, BOOL *stop) {
-            buddy.status = OTRThreadStatusOffline;
-            buddy.statusMessage = nil;
-            buddy.waitingForvCardTempFetch = NO;
-            [transaction setObject:buddy forKey:buddy.uniqueId inCollection:[OTRXMPPBuddy collection]];
+            // We don't need to save in here because we're using OTRBuddyCache in memory storage
+            [[OTRBuddyCache sharedInstance] purgeAllPropertiesForBuddy:buddy];
         }];
-        
     }];
 }
 
@@ -1040,12 +1036,7 @@ NSString *const OTRXMPPLoginErrorKey = @"OTRXMPPLoginErrorKey";
         
         if(shouldSend)
         {
-            [[OTRDatabaseManager sharedInstance].readWriteDatabaseConnection readWriteWithBlock:^(YapDatabaseReadWriteTransaction *transaction) {
-                OTRXMPPBuddy *localBuddy = [OTRXMPPBuddy fetchObjectWithUniqueID:buddy.uniqueId transaction:transaction];
-                localBuddy.lastSentChatState = chatState;
-                
-                [localBuddy saveWithTransaction:transaction];
-            }];
+            [[OTRBuddyCache sharedInstance] setLastSentChatState:chatState forBuddy:buddy];
             [self.xmppStream sendElement:xMessage];
         }
     });
